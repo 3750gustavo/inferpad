@@ -57,6 +57,9 @@
             <div class="buttons-container">
                 <button id="generateBtn" class="px-4 py-2 bg-blue-500 text-white rounded">Generate</button>
                 <button id="cancelBtn" class="px-4 py-2 bg-red-500 text-white rounded" disabled>Cancel</button>
+                <button id="retryBtn" class="px-4 py-2 bg-yellow-500 text-white rounded" disabled>Retry</button>
+                <button id="undoBtn" class="px-4 py-2 bg-purple-500 text-white rounded" disabled>Undo</button>
+                <button id="playBtn" class="px-4 py-2 bg-green-500 text-white rounded">Play Voice</button>
             </div>
         </div>
     </div>
@@ -72,6 +75,9 @@
         const mainTextArea = document.getElementById('mainTextArea');
         const generateBtn = document.getElementById('generateBtn');
         const cancelBtn = document.getElementById('cancelBtn');
+        const retryBtn = document.getElementById('retryBtn');
+        const undoBtn = document.getElementById('undoBtn');
+        const playBtn = document.getElementById('playBtn');
         const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
         const sideBar = document.getElementById('sideBar');
         const mainContent = document.getElementById('mainContent');
@@ -79,35 +85,19 @@
         const apiKey = document.getElementById('apiKey');
         const memory = document.getElementById('memory');
         const authorNotes = document.getElementById('authorNotes');
-        let controller; // Changed to let for reassignment
+        let controller;
 
-        generateBtn.addEventListener('click', () => {
-            let prompt = mainTextArea.value.trim(); // Changed to let for reassignment
-            const apiUrlValue = apiUrl.value.trim();
-            const apiKeyValue = apiKey.value.trim();
-            const memoryValue = memory.value.trim();
-            const authorNotesValue = authorNotes.value.trim();
+        function setButtonStates(generating) {
+            generateBtn.disabled = generating;
+            cancelBtn.disabled = !generating;
+            retryBtn.disabled = generating;
+            undoBtn.disabled = generating;
+        }
 
-            let authorNotes_injectionDepth = 4;
+        function generate(prompt, fullText) {
+            setButtonStates(true);
 
-            let promptLines = prompt.split('\n');
-            if (memoryValue) {
-                promptLines.unshift(memoryValue);
-            }
-            if (authorNotesValue) {
-                promptLines.splice(Math.max(promptLines.length - authorNotes_injectionDepth, 0), 0, authorNotesValue);
-            }
-
-            prompt = promptLines.join('\n'); // Reassignment here
-
-            console.log('Prompt:', prompt);
-
-            if (!prompt) return;
-
-            generateBtn.disabled = true;
-            cancelBtn.disabled = false;
-
-            controller = new AbortController(); // Reassigning controller
+            controller = new AbortController();
             const signal = controller.signal;
 
             fetch('/generate', {
@@ -115,7 +105,12 @@
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ prompt }),
+                body: JSON.stringify({
+                    prompt,
+                    apiUrl: apiUrl.value,
+                    apiKey: apiKey.value,
+                    fullText
+                }),
                 signal: signal
             }).then(response => {
                 const reader = response.body.getReader();
@@ -124,8 +119,7 @@
                 function readStream() {
                     reader.read().then(({ done, value }) => {
                         if (done) {
-                            generateBtn.disabled = false;
-                            cancelBtn.disabled = true;
+                            setButtonStates(false);
                             return;
                         }
 
@@ -141,8 +135,7 @@
                                     console.error('Error:', data.error);
                                     mainTextArea.value += '\nError: ' + data.error;
                                 } else if (data.done) {
-                                    generateBtn.disabled = false;
-                                    cancelBtn.disabled = true;
+                                    setButtonStates(false);
                                     return;
                                 }
                             }
@@ -155,8 +148,7 @@
                         } else {
                             console.error('Stream reading error:', error);
                         }
-                        generateBtn.disabled = false;
-                        cancelBtn.disabled = true;
+                        setButtonStates(false);
                     });
                 }
 
@@ -167,9 +159,29 @@
                 } else {
                     console.error('Fetch error:', error);
                 }
-                generateBtn.disabled = false;
-                cancelBtn.disabled = true;
+                setButtonStates(false);
             });
+        }
+
+        generateBtn.addEventListener('click', () => {
+            let prompt = mainTextArea.value.trim();
+            const memoryValue = memory.value.trim();
+            const authorNotesValue = authorNotes.value.trim();
+
+            let authorNotes_injectionDepth = 4;
+
+            let promptLines = prompt.split('\n');
+            if (memoryValue) {
+                promptLines.unshift(memoryValue);
+            }
+            if (authorNotesValue) {
+                promptLines.splice(Math.max(promptLines.length - authorNotes_injectionDepth, 0), 0, authorNotesValue);
+            }
+
+            prompt = promptLines.join('\n');
+
+            if (!prompt) return;
+            generate(prompt, mainTextArea.value);
         });
 
         cancelBtn.addEventListener('click', () => {
@@ -177,9 +189,35 @@
                 controller.abort();
                 fetch('/cancel', { method: 'POST' }).catch(console.error);
             }
+            setButtonStates(false);
+        });
 
-            generateBtn.disabled = false;
-            cancelBtn.disabled = true;
+        retryBtn.addEventListener('click', () => {
+            fetch('/retry', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.prompt && data.fullText) {
+                        mainTextArea.value = data.fullText;
+                        generate(data.prompt, data.fullText);
+                    }
+                })
+                .catch(error => console.error('Retry error:', error));
+        });
+
+        undoBtn.addEventListener('click', () => {
+            fetch('/undo', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.text !== undefined) {
+                        mainTextArea.value = data.text;
+                    }
+                })
+                .catch(error => console.error('Undo error:', error));
+        });
+
+        playBtn.addEventListener('click', () => {
+            const audio = new Audio('generate_voice.mp3');
+            audio.play();
         });
 
         toggleSidebarBtn.addEventListener('click', () => {
