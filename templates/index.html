@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .main-content-expanded {
+            width: 100%;
+            margin-right: 0;
+        }
+
+        .main-content-collapsed {
+            width: 75%;
+            margin-right: 1rem;
+        }
+
+        .sidebar-visible {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            width: 25%;
+        }
+
+        .sidebar-hidden {
+            display: none;
+        }
+
+        .content-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .text-area-container {
+            flex-grow: 1;
+        }
+
+        .buttons-container {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .small-textarea {
+            height: 3rem; /* Smaller height for the API Key textarea */
+        }
+    </style>
+</head>
+<body class="flex max-w-6xl mx-auto p-5">
+    <div id="mainContent" class="main-content-collapsed transition-all duration-300">
+        <h1 class="text-2xl font-bold mb-4">Text Generator</h1>
+        <div class="content-container">
+            <div class="text-area-container">
+                <textarea id="mainTextArea" class="w-full h-full p-2 border border-gray-300 rounded mb-4" placeholder="Enter your main text here..."></textarea>
+            </div>
+            <div class="buttons-container">
+                <button id="generateBtn" class="px-4 py-2 bg-blue-500 text-white rounded">Generate</button>
+                <button id="cancelBtn" class="px-4 py-2 bg-red-500 text-white rounded" disabled>Cancel</button>
+            </div>
+        </div>
+    </div>
+    <div id="sideBar" class="sidebar-visible transition-all duration-300">
+        <textarea id="apiUrl" class="w-full small-textarea p-2 border border-gray-300 rounded" placeholder="API URL"></textarea>
+        <input id="apiKey" class="w-full small-textarea p-2 border border-gray-300 rounded" type="password" placeholder="API Key">
+        <textarea id="memory" class="w-full h-24 p-2 border border-gray-300 rounded" placeholder="Memory"></textarea>
+        <textarea id="authorNotes" class="w-full h-24 p-2 border border-gray-300 rounded" placeholder="Author Notes"></textarea>
+    </div>
+    <button id="toggleSidebarBtn" class="px-4 py-2 bg-green-500 text-white rounded fixed bottom-5 right-5">Toggle Sidebar</button>
+
+    <script>
+        const mainTextArea = document.getElementById('mainTextArea');
+        const generateBtn = document.getElementById('generateBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
+        const sideBar = document.getElementById('sideBar');
+        const mainContent = document.getElementById('mainContent');
+        const apiUrl = document.getElementById('apiUrl');
+        const apiKey = document.getElementById('apiKey');
+        const memory = document.getElementById('memory');
+        const authorNotes = document.getElementById('authorNotes');
+        let controller; // Changed to let for reassignment
+
+        generateBtn.addEventListener('click', () => {
+            let prompt = mainTextArea.value.trim(); // Changed to let for reassignment
+            const apiUrlValue = apiUrl.value.trim();
+            const apiKeyValue = apiKey.value.trim();
+            const memoryValue = memory.value.trim();
+            const authorNotesValue = authorNotes.value.trim();
+
+            let authorNotes_injectionDepth = 4;
+
+            let promptLines = prompt.split('\n');
+            if (memoryValue) {
+                promptLines.unshift(memoryValue);
+            }
+            if (authorNotesValue) {
+                promptLines.splice(Math.max(promptLines.length - authorNotes_injectionDepth, 0), 0, authorNotesValue);
+            }
+
+            prompt = promptLines.join('\n'); // Reassignment here
+
+            console.log('Prompt:', prompt);
+
+            if (!prompt) return;
+
+            generateBtn.disabled = true;
+            cancelBtn.disabled = false;
+
+            controller = new AbortController(); // Reassigning controller
+            const signal = controller.signal;
+
+            fetch('/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ prompt }),
+                signal: signal
+            }).then(response => {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                function readStream() {
+                    reader.read().then(({ done, value }) => {
+                        if (done) {
+                            generateBtn.disabled = false;
+                            cancelBtn.disabled = true;
+                            return;
+                        }
+
+                        const chunk = decoder.decode(value);
+                        const lines = chunk.split('\n\n');
+                        lines.forEach(line => {
+                            if (line.startsWith('data: ')) {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.text) {
+                                    mainTextArea.value += data.text;
+                                    mainTextArea.scrollTop = mainTextArea.scrollHeight;
+                                } else if (data.error) {
+                                    console.error('Error:', data.error);
+                                    mainTextArea.value += '\nError: ' + data.error;
+                                } else if (data.done) {
+                                    generateBtn.disabled = false;
+                                    cancelBtn.disabled = true;
+                                    return;
+                                }
+                            }
+                        });
+
+                        readStream();
+                    }).catch(error => {
+                        if (error.name === 'AbortError') {
+                            console.log('Fetch aborted');
+                        } else {
+                            console.error('Stream reading error:', error);
+                        }
+                        generateBtn.disabled = false;
+                        cancelBtn.disabled = true;
+                    });
+                }
+
+                readStream();
+            }).catch(error => {
+                if (error.name === 'AbortError') {
+                    console.log('Fetch aborted');
+                } else {
+                    console.error('Fetch error:', error);
+                }
+                generateBtn.disabled = false;
+                cancelBtn.disabled = true;
+            });
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            if (controller) {
+                controller.abort();
+                fetch('/cancel', { method: 'POST' }).catch(console.error);
+            }
+
+            generateBtn.disabled = false;
+            cancelBtn.disabled = true;
+        });
+
+        toggleSidebarBtn.addEventListener('click', () => {
+            if (sideBar.classList.contains('sidebar-visible')) {
+                sideBar.classList.replace('sidebar-visible', 'sidebar-hidden');
+                mainContent.classList.replace('main-content-collapsed', 'main-content-expanded');
+            } else {
+                sideBar.classList.replace('sidebar-hidden', 'sidebar-visible');
+                mainContent.classList.replace('main-content-expanded', 'main-content-collapsed');
+            }
+        });
+    </script>
+</body>
+</html>
