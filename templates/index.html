@@ -59,7 +59,6 @@
                 <button id="cancelBtn" class="px-4 py-2 bg-red-500 text-white rounded" disabled>Cancel</button>
                 <button id="retryBtn" class="px-4 py-2 bg-yellow-500 text-white rounded" disabled>Retry</button>
                 <button id="undoBtn" class="px-4 py-2 bg-purple-500 text-white rounded" disabled>Undo</button>
-                <button id="playBtn" class="px-4 py-2 bg-green-500 text-white rounded">Play Voice</button>
             </div>
         </div>
     </div>
@@ -215,11 +214,6 @@
                 .catch(error => console.error('Undo error:', error));
         });
 
-        playBtn.addEventListener('click', () => {
-            const audio = new Audio('generate_voice.mp3');
-            audio.play();
-        });
-
         toggleSidebarBtn.addEventListener('click', () => {
             if (sideBar.classList.contains('sidebar-visible')) {
                 sideBar.classList.replace('sidebar-visible', 'sidebar-hidden');
@@ -229,6 +223,7 @@
                 mainContent.classList.replace('main-content-expanded', 'main-content-collapsed');
             }
         });
+
     </script>
 </body>
 </html>
